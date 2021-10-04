@@ -1,29 +1,38 @@
 # Discord GPT2 Chatbot
+
 #### Based off of: https://github.com/DoktorHolmes/Maxwell and https://github.com/polakowo/gpt2bot    
+
 ![The AI uprising is coming](/images/hal.gif)  
+
 #### Changelog:
+
 - Fixed issues with long messages causing the original Maxwell bot to freeze (clears history if an error occurs and prints traceback in Discord)
 - Fixed issues with translation causing no response from bot due to misread language
 - Removed statistics reporting which had errors that prevented the original program from running
+
 ## Installation
+
 Please ignore instructions from original readme, I updated packages to the latest working versions:    
 1. Clone this repository  
 2. Install Python 3.7.9 if not installed  
-3. Install required libraries (I reccomend using a virtual environment or an IDE like PyCharm). You can install all requirements with "pip install -r requirements.txt":  
-requests~=2.24.0  
-torch~=1.2.0+cu92  
-tqdm~=4.48.2  
-transformers~=2.3.0  
-python-telegram-bot~=12.8  
-numpy~=1.19.1  
-discord~=1.0.1  
-textblob~=0.15.3  
-googletrans~=3.0.0  
-matplotlib~=3.3.1
-4. Open the folder "gpt2bot"  
-5. In discord_bot.py, at line 117, replace "TOKEN_GOES_HERE" with your discord bot's API token  
-6. Run discord_bot.py. The model will download automatically.
-7. @ the bot or DM to get a response!
+3. Install required libraries (I reccomend using a virtual environment or an IDE like PyCharm). You can install all requirements with `pip install -r requirements.txt`:  
+  ```
+    requests~=2.24.0  
+    torch==1.4.0+cu92  
+    tqdm~=4.48.2  
+    transformers~=2.3.0  
+    python-telegram-bot~=12.8  
+    numpy~=1.19.1  
+    discord~=1.0.1  
+    textblob~=0.15.3  
+    googletrans~=4.0.0-rc1
+    matplotlib~=3.3.1
+    python-decouple==3.5```
+4. Copy `.env.conf` to `.env` (`cp .env.conf .env`)
+5. In `.env``, replace "YOUR_TOKEN_GOES_HERE" with your discord bot's API token and save the file
+6. Open the folder "gpt2bot" 
+7. Run discord_bot.py (`python discord_bot.py`). The model will download automatically.
+8. @ the bot or DM to get a response!
 
 # Maxwell - A DialoGPT variant for discord.py - Original Readme
 

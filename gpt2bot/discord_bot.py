@@ -6,6 +6,7 @@ import logging
 import random
 import asyncio
 
+from decouple import config
 import discord
 from discord.ext import commands
 import time
@@ -227,7 +228,7 @@ def main():
     global history_dict
     global token
 
-    token = "YOUR_TOKEN_HERE" # Replace TOKEN_GOES_HERE with your discord API bot token!
+    token = config('DISCORD_TOKEN') # Replace TOKEN_GOES_HERE with your discord API bot token!
     history_dict = {}
     # Script arguments can include path of the config
     arg_parser = argparse.ArgumentParser()

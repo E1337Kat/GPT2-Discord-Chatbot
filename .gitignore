@@ -1,0 +1,4 @@
+# This project specific stuff
+models/
+.env
+__pycache__/

@@ -16,6 +16,7 @@ Please ignore instructions from original readme, I updated packages to the lates
 1. Clone this repository  
 2. Install Python 3.7.9 if not installed  
 3. Install required libraries (I reccomend using a virtual environment or an IDE like PyCharm). You can install all requirements with `pip install -r requirements.txt`:  
+
   ```
     requests~=2.24.0  
     torch==1.4.0+cu92  
@@ -27,7 +28,9 @@ Please ignore instructions from original readme, I updated packages to the lates
     textblob~=0.15.3  
     googletrans~=4.0.0-rc1
     matplotlib~=3.3.1
-    python-decouple==3.5```
+    python-decouple==3.5
+  ```
+
 4. Copy `.env.conf` to `.env` (`cp .env.conf .env`)
 5. In `.env``, replace "YOUR_TOKEN_GOES_HERE" with your discord bot's API token and save the file
 6. Open the folder "gpt2bot" 

@@ -1,5 +1,5 @@
 requests~=2.24.0
-torch~=1.4.0+cu92
+torch~=1.4.0+cpu
 tqdm~=4.48.2
 transformers~=2.3.0
 python-telegram-bot~=12.8

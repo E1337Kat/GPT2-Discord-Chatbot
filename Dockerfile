@@ -3,6 +3,7 @@ FROM python:3.7-slim-stretch
 RUN apt-get -y update && apt-get -y install gcc
 
 COPY requirements.txt .
+COPY .env .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -11,4 +12,4 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY gpt2bot .
 
-CMD ["python", "telegram_bot.py"]
+CMD ["python", "discord_bot.py"]

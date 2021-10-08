@@ -121,7 +121,7 @@ def download_reverse_model_folder(config):
     download_file(REVERSE_MODEL_URL, target_folder)
     return target_folder_name
 
-def load_model(target_folder_name, config):
+def load_model(target_folder_name: str, config):
     # Parse parameters
     data_folder = config.get('model', 'data_folder')
     model_size = config.get('model', 'model_size')
@@ -132,6 +132,7 @@ def load_model(target_folder_name, config):
     # Tokenizer
     target_folder = os.path.join(data_folder, target_folder_name)
     tokenizer = GPT2Tokenizer(os.path.join(target_folder, 'vocab.json'), os.path.join(target_folder, 'merges.txt'))
+    # tokenizer.add_special_tokens({"pad_token": "\u00a1"})
     # Config
     config = GPT2Config.from_json_file(os.path.join(target_folder, 'config.json'))
     # Weights

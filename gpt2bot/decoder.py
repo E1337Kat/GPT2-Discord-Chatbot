@@ -133,7 +133,7 @@ def generate_response(model: GPT2LMHeadModel, tokenizer: GPT2Tokenizer, context:
         set_seed(seed)
 
     # Generate response
-    context_ids = tokenizer.encode(context, max_length=max_length, pad_to_max_length=False)
+    context_ids = tokenizer.encode(context, max_length=max_length, pad_to_max_length=False, add_prefix_space=True, truncation=True)
     logger.debug("found context_ids: " + str(context_ids))
     samples = sample_sequence(model, tokenizer, context_ids, config)
     samples = samples[:, len(context_ids):].tolist()

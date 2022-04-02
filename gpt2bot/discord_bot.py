@@ -96,6 +96,8 @@ async def on_message(message: Message):
             logger.info("Handlable message received...")
             if(should_respond):
                 await responseHandler(message)
+
+
 async def responseHandler(message):
     txtinput = parse_commands(message)
     txtinput = filter_self(txtinput)  #Filter out the mention so the bot does not get confused
@@ -231,7 +233,7 @@ def truncate_input(content: str) -> str:
     """
     Filter out the mention so the bot does not get confused
     """
-    return content[:135]
+    return content[:335]
 
 
 def get_prescripted_lines(filepath):

@@ -99,7 +99,7 @@ async def on_message(message: Message):
 async def responseHandler(message):
     txtinput = parse_commands(message)
     txtinput = filter_self(txtinput)  #Filter out the mention so the bot does not get confused
-    txtinput = truncate_input(txtlength)
+    txtinput = truncate_input(txtinput)
     response = ""
     blob = TextBlob(txtinput)
     lang = translator.detect(txtinput).lang
@@ -225,6 +225,13 @@ def filter_self(content: str) -> str:
     Filter out the mention so the bot does not get confused
     """
     return content.replace("<@" + str(client.user.id) + ">", "").replace("<@!" + str(client.user.id) + ">", "")
+
+
+def truncate_input(content: str) -> str:
+    """
+    Filter out the mention so the bot does not get confused
+    """
+    return content[:135]
 
 
 def get_prescripted_lines(filepath):

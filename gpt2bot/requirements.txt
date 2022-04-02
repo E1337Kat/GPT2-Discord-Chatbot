@@ -2,7 +2,7 @@ requests~=2.24.0
 -f https://download.pytorch.org/whl/torch_stable.html
 torch==1.4.0+cu92
 tqdm~=4.48.2
-transformers~=2.3.0
+
 python-telegram-bot~=12.8
 numpy~=1.19.1
 discord~=1.0.1

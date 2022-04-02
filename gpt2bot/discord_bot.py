@@ -18,15 +18,12 @@ import re
 #mpl.use('Agg')
 #import matplotlib.pyplot as plt
 import traceback
-
-
+from discord.message import Message
 from model import download_model_folder, download_reverse_model_folder, load_model
 from decoder import generate_response
-
-
 from textblob import TextBlob
 from googletrans import Translator
-
+import datetime
 
 
 
@@ -39,9 +36,9 @@ logger.addHandler(handler)
 
 client = commands.Bot(command_prefix="BOT_NAME")
 
-
-#tenor_gifs = tenorpy.Tenor()
-
+global conversations
+global debug_command
+global debug_modes
 global translator
 
 global num_samples
@@ -53,12 +50,15 @@ global config_parser
 global mmi_tokenizer
 global start_time
 global history_dict
-import datetime
 
 @client.event
 async def on_ready():
     global translator
-    
+
+    global conversations
+    global debug_command
+    global debug_modes
+
     global num_samples
     global max_turns_history
     global model
@@ -68,75 +68,117 @@ async def on_ready():
     global config_parser
     global history_dict
 
+    if(conversations is None):
+        conversations = {}
+    if(debug_command is None):
+        debug_command = {}
+    if(debug_modes is None):
+        debug_modes = {}
     if(history_dict is None):
         history_dict = {}
-    translator = Translator()
     logger.info('Logged in as '+client.user.name+' (ID:'+str(client.user.id)+') | '+str(len(client.guilds))+' servers | ' + getAllUsersCount())
     await client.change_presence(activity=discord.Game(name='remind me to fix bugs'))
     #schedule.every().day.at("00:00").do(client.loop.call_soon_threadsafe, restart_script())
     #client.loop.create_task(run_schedule())
 
+from table2ascii import table2ascii as t2a, PresetStyle
 
+# # In your command:
+# output = t2a(
+#     header=["Rank", "Team", "Kills", "Position Pts", "Total"],
+#     body=[[1, 'Team A', 2, 4, 6], [2, 'Team B', 3, 3, 6], [3, 'Team C', 4, 2, 6]],
+#     style=PresetStyle.thin_compact
+# )
 #Called when a message is received
 @client.listen()
-async def on_message(message):
-    global turn
-    global turn2
+async def on_message(message: Message):
+    global conversations
+    global debug_command
+    global debug_modes
+
     global from_index
     global history_dict
+    global turn
+    global turn2
+    global translator
+    debug_modes[message.id] = False
     if not (message.author == client.user): #Check to ensure the bot does not respond to its own messages
         if(message.mention_everyone == False):
-            if(client.user.mentioned_in(message) or isinstance(message.channel, discord.abc.PrivateChannel)): #Check if the bot is mentioned or if the message is in DMs
-                translator = Translator()
-                txtinput = message.content.replace("<@" + str(client.user.id) + ">", "").replace("<@!" + str(client.user.id) + ">", "")  #Filter out the mention so the bot does not get confused
-                response = ""
-                blob = TextBlob(txtinput)
-                lang = translator.detect(txtinput).lang
-                #lang = "en"
-                debug_mode = False
-                if("!debug" in txtinput):
-                    debug_mode = True
-                    txtinput = txtinput.replace("!debug", "")
-                try:
-                    if(lang != "en"):
-                        txtinput = str(translator.translate(txtinput, dest="en", src=lang).text)
-                        #_context.append(txtinput)
-                except:
-                    print("A translation error occured")
-                    e = sys.exc_info()[0]
-                    logger.exception("Error occured with translation service:")
-
+            logger.info("Handlable message received...")
+            if(should_respond):
+                await responseHandler(message)
+            elif(debug_command[message.id] == "state"):
+                response = t2a(
+                    header=["User Message", "Bot Message"],
+                    body=[[1, 'Team A', 2, 4, 6], [2, 'Team B', 3, 3, 6], [3, 'Team C', 4, 2, 6]],
+                    style=PresetStyle.thin_compact
+                )
                 async with message.channel.typing(): #Show that the bot is typing
-                    if(isinstance(message.channel, discord.abc.PrivateChannel)):
-                        maybe_response = get_response(txtinput, message.author.id, False, debug_mode) #Get a response!
-                        if(isinstance(maybe_response, str)):
-                            response =  maybe_response
-                    else:
-                        maybe_response = get_response(txtinput, message.guild.id, False, debug_mode) #Get a response!
-                        if(isinstance(maybe_response, str)):
-                            response =  maybe_response
-                    response_blob = TextBlob(response)
-
                     try:
                         await message.channel.send(response) #Fire away!
                     except HTTPException as e:
                         logger.exception("ERROR occured:")
                         formatted_ex = traceback.format_exc() #Fetch error
-                        if debug_mode:
-                            response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
-                        else:
-                            response = "I tried to send nothing to discord.. I am very sorry goshujin-sama"
+                        response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
                         await message.channel.send(response)  # Fire away!
-                        history_dict = {} #Clear history
-                    except:
-                        logger.exception("ERROR occured:")
-                        formatted_ex = traceback.format_exc() #Fetch error
-                        if debug_mode:
-                            response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
-                        else:
-                            response = "I'm a dumb bot and couldn't understand that. Sorry!"
-                        await message.channel.send(response)  # Fire away!
-                        history_dict = {} #Clear history
+                    finally:
+                        debug_modes.pop(message.id)
+                        logger.debug("Toggling debug mode off")
+                        logger.setLevel(logging.INFO)
+
+async def responseHandler(message):
+    txtinput = parse_commands(message)
+    txtinput = filter_self(txtinput)  #Filter out the mention so the bot does not get confused
+    response = ""
+    blob = TextBlob(txtinput)
+    lang = translator.detect(txtinput).lang
+    #lang = "en"
+    debug_mode = debug_modes[message.id]
+    try:
+        if(lang != "en"):
+            txtinput = str(translator.translate(txtinput, dest="en", src=lang).text)
+            #_context.append(txtinput)
+    except:
+        print("A translation error occured")
+        e = sys.exc_info()[0]
+        logger.exception("Error occured with translation service:")
+
+    async with message.channel.typing(): #Show that the bot is typing
+        if(isinstance(message.channel, discord.abc.PrivateChannel)):
+            maybe_response = get_response(txtinput, message.author.id, False, debug_mode) #Get a response!
+            if(isinstance(maybe_response, str)):
+                response =  maybe_response
+        else:
+            maybe_response = get_response(txtinput, message.guild.id, False, debug_mode) #Get a response!
+            if(isinstance(maybe_response, str)):
+                response =  maybe_response
+        response_blob = TextBlob(response)
+
+        try:
+            await message.channel.send(response) #Fire away!
+        except HTTPException as e:
+            logger.exception("ERROR occured:")
+            formatted_ex = traceback.format_exc() #Fetch error
+            if debug_mode:
+                response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
+            else:
+                response = "I tried to send nothing to discord.. I am very sorry goshujin-sama"
+            await message.channel.send(response)  # Fire away!
+            history_dict = {} #Clear history
+        except:
+            logger.exception("ERROR occured:")
+            formatted_ex = traceback.format_exc() #Fetch error
+            if debug_mode:
+                response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
+            else:
+                response = "I'm a dumb bot and couldn't understand that. Sorry!"
+            await message.channel.send(response)  # Fire away!
+            history_dict = {} #Clear history
+        finally:
+            debug_modes.pop(message.id)
+            if debug_mode:
+                logger.debug("Toggling debug mode off")
+            logger.setLevel(logging.INFO)
 
 
 def getAllUsersCount():
@@ -169,9 +211,60 @@ def run_chat():
     task1 = loop.create_task(client.start(token))
     gathered = asyncio.gather(task1, loop=loop)
     loop.run_until_complete(gathered)
-    
-  
-  
+
+
+def parse_commands(msg: Message) -> str:
+    """
+    Parses the message content to determine if we need to set any variables
+    """
+    global conversations
+    global debug_modes
+    global debug_command
+
+    content = msg.content
+    message_id = msg.id
+    channel_id = msg.channel.id
+    if not message_id in debug_modes:
+        debug_modes[message_id] = []
+    if not message_id in debug_command:
+        debug_command[message_id] = []
+    if not channel_id in conversations:
+        conversations[channel_id] = False
+
+    if("!debug" in content):
+        logger.setLevel(logging.DEBUG)
+        logger.info("Toggling debug mode on")
+        debug_modes[message_id] = True
+        content = content.replace("!debug", "")
+    else:
+        debug_modes[message_id] = False
+
+    if("!convo" in content):
+        logger.info("Toggling conversation mode")
+        conversations[channel_id] = not conversations[channel_id]
+        content = content.replace("!convo", "")
+
+    if("current state?" in content and debug_modes[message_id]):
+        logger.info("Replying with state instead")
+        debug_command[message_id] = "state"
+
+    return content
+
+
+def should_respond(message: Message) -> bool:
+    """
+    Checks if the bot is mentioned or if the message is in DMs or in a conversation in the current channel.
+    """
+    return client.user.mentioned_in(message) or isinstance(message.channel, discord.abc.PrivateChannel) or conversations[message.channel.id]
+
+
+def filter_self(content: str) -> str:
+    """
+    Filter out the mention so the bot does not get confused
+    """
+    return content.replace("<@" + str(client.user.id) + ">", "").replace("<@!" + str(client.user.id) + ">", "")
+
+
 def get_prescripted_lines(filepath):
     lines = []
     with open(filepath, "r") as f:
@@ -247,10 +340,9 @@ def get_response(prompt: str, channel_id: str, do_infinite: bool, debug_mode: bo
         history_dict = {} #Clear history
         return response 
 
+    logger.debug("Found responses: " + str(bot_messages))
+    logger.debug("history: " + str(history_dict))
     if debug_mode:
-        logger.warning("Found responses: " + str(bot_messages))
-        logger.warning("history: " + str(history_dict))
-        print(history_dict)
         bot_message = str(bot_messages) if bot_messages != [''] else ''
     elif num_samples == 1:
         bot_message = bot_messages[0]
@@ -264,7 +356,10 @@ def get_response(prompt: str, channel_id: str, do_infinite: bool, debug_mode: bo
 
 def main():
     global translator
-    
+
+    global conversations
+    global debug_command
+    global debug_modes
     global num_samples
     global max_turns_history
     global model
@@ -275,7 +370,11 @@ def main():
     global history_dict
     global token
 
+    conversations = {}
+    debug_command = {}
+    debug_modes = {}
     history_dict = {}
+    translator = Translator()
     # Script arguments can include path of the config
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--config', type=str, default="chatbot.cfg")

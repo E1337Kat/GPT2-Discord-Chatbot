@@ -1,15 +1,35 @@
-FROM python:3.7-slim-stretch
+FROM nvidia/cuda:10.2-devel-ubuntu18.04
+# CMD nvidia-smi
 
-RUN apt-get -y update && apt-get -y install gcc
+#set up environment
+RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y curl
+RUN apt-get -y install gcc
+RUN apt-get -y install unzip zlib1g-dev libjpeg8-dev
+RUN apt-get -y install python3 python3-pip
+# RUN apt-get -y install 
 
-COPY requirements.txt .
+# WORKDIR /app
+ADD gpt2bot/requirements.txt ./requirements.txt
+
+# RUN pip3 install torch
+RUN pip3 install torch==1.4.0+cu92 --find-links https://download.pytorch.org/whl/torch_stable.html
+RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install transformers~=4.6.1
+
+COPY gpt2bot .
 COPY .env .
 
-RUN pip install --no-cache-dir -r requirements.txt
+ENV NUM_EPOCHS=10
+ENV MODEL_TYPE='EfficientDet'
+ENV DATASET_LINK='HIDDEN'
+ENV TRAIN_TIME_SEC=100
 
 # Clean up APT when done.
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-COPY gpt2bot .
+COPY run.sh run.sh
+RUN chmod u+x run.sh
 
-CMD ["python", "discord_bot.py"]
+ARG PYTHON_ENV=development
+ENV PYTHON_ENV=${PYTHON_ENV}
+CMD ["./run.sh"]

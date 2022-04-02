@@ -8,6 +8,7 @@ import asyncio
 
 from decouple import config
 import discord
+from discord.errors import *
 from discord.ext import commands
 import time
 import os
@@ -30,8 +31,11 @@ from googletrans import Translator
 
 
 # Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
 
 client = commands.Bot(command_prefix="BOT_NAME")
 
@@ -45,7 +49,7 @@ global max_turns_history
 global model
 global tokenizer
 global mmi_model
-global config
+global config_parser
 global mmi_tokenizer
 global start_time
 global history_dict
@@ -61,13 +65,13 @@ async def on_ready():
     global tokenizer
     global mmi_model
     global mmi_tokenizer
-    global config
+    global config_parser
     global history_dict
 
     if(history_dict is None):
         history_dict = {}
     translator = Translator()
-    print('Logged in as '+client.user.name+' (ID:'+str(client.user.id)+') | '+str(len(client.guilds))+' servers | ' + getAllUsersCount())
+    logger.info('Logged in as '+client.user.name+' (ID:'+str(client.user.id)+') | '+str(len(client.guilds))+' servers | ' + getAllUsersCount())
     await client.change_presence(activity=discord.Game(name='remind me to fix bugs'))
     #schedule.every().day.at("00:00").do(client.loop.call_soon_threadsafe, restart_script())
     #client.loop.create_task(run_schedule())
@@ -83,29 +87,55 @@ async def on_message(message):
     if not (message.author == client.user): #Check to ensure the bot does not respond to its own messages
         if(message.mention_everyone == False):
             if(client.user.mentioned_in(message) or isinstance(message.channel, discord.abc.PrivateChannel)): #Check if the bot is mentioned or if the message is in DMs
+                translator = Translator()
+                txtinput = message.content.replace("<@" + str(client.user.id) + ">", "").replace("<@!" + str(client.user.id) + ">", "")  #Filter out the mention so the bot does not get confused
+                response = ""
+                blob = TextBlob(txtinput)
+                lang = translator.detect(txtinput).lang
+                #lang = "en"
+                debug_mode = False
+                if("!debug" in txtinput):
+                    debug_mode = True
+                    txtinput = txtinput.replace("!debug", "")
+                try:
+                    if(lang != "en"):
+                        txtinput = str(translator.translate(txtinput, dest="en", src=lang).text)
+                        #_context.append(txtinput)
+                except:
+                    print("A translation error occured")
+                    e = sys.exc_info()[0]
+                    logger.exception("Error occured with translation service:")
+
                 async with message.channel.typing(): #Show that the bot is typing
-                    translator = Translator()
-                    txtinput = message.content.replace("<@" + str(client.user.id) + ">", "").replace("<@!" + str(client.user.id) + ">", "")  #Filter out the mention so the bot does not get confused
-                    blob = TextBlob(txtinput)
-                    lang = translator.detect(txtinput).lang
-                    #lang = "en"
-                    try:
-                        if(lang != "en"):
-                            txtinput = str(translator.translate(txtinput, dest="en", src=lang).text)
-                            #_context.append(txtinput)
-                    except:
-                        print("A translation error occured")
                     if(isinstance(message.channel, discord.abc.PrivateChannel)):
-                            txt = get_response(txtinput, message.author.id, False) #Get a response!
+                        maybe_response = get_response(txtinput, message.author.id, False, debug_mode) #Get a response!
+                        if(isinstance(maybe_response, str)):
+                            response =  maybe_response
                     else:
-                            txt = get_response(txtinput, message.guild.id, False) #Get a response!
-                    response_blob = TextBlob(txt)
+                        maybe_response = get_response(txtinput, message.guild.id, False, debug_mode) #Get a response!
+                        if(isinstance(maybe_response, str)):
+                            response =  maybe_response
+                    response_blob = TextBlob(response)
+
                     try:
-                        bot_message = await message.channel.send(txt) #Fire away!
+                        await message.channel.send(response) #Fire away!
+                    except HTTPException as e:
+                        logger.exception("ERROR occured:")
+                        formatted_ex = traceback.format_exc() #Fetch error
+                        if debug_mode:
+                            response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
+                        else:
+                            response = "I tried to send nothing to discord.. I am very sorry goshujin-sama"
+                        await message.channel.send(response)  # Fire away!
+                        history_dict = {} #Clear history
                     except:
-                        txt = traceback.format_exc() #Fetch error
-                        txt = "An error has occurred. Please try again:\n```" + txt + "```"
-                        bot_message = await message.channel.send(txt)  # Fire away!
+                        logger.exception("ERROR occured:")
+                        formatted_ex = traceback.format_exc() #Fetch error
+                        if debug_mode:
+                            response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
+                        else:
+                            response = "I'm a dumb bot and couldn't understand that. Sorry!"
+                        await message.channel.send(response)  # Fire away!
                         history_dict = {} #Clear history
 
 
@@ -126,12 +156,12 @@ def run_chat():
     global tokenizer
     global mmi_model
     global mmi_tokenizer
-    global config
+    global config_parser
     global history_dict
     global token
     
-    num_samples = config.getint('decoder', 'num_samples')
-    max_turns_history = config.getint('decoder', 'max_turns_history')
+    num_samples = config_parser.getint('decoder', 'num_samples')
+    max_turns_history = config_parser.getint('decoder', 'max_turns_history')
 
     logger.info("Running the chatbot...")
     turns = []
@@ -150,7 +180,8 @@ def get_prescripted_lines(filepath):
     return lines
 global static_history
 static_history = get_prescripted_lines("./constant_thoughts.txt")
-def get_response(prompt, channel_id, do_infinite):
+
+def get_response(prompt: str, channel_id: str, do_infinite: bool, debug_mode: bool) -> str:
     global translator
     global turn
     global turn2
@@ -160,7 +191,7 @@ def get_response(prompt, channel_id, do_infinite):
     global tokenizer
     global mmi_model
     global mmi_tokenizer
-    global config
+    global config_parser
     global history_dict
     global from_index
     if max_turns_history == 0:
@@ -196,23 +227,39 @@ def get_response(prompt, channel_id, do_infinite):
         for message in turn2['bot_messages']:
             history += message + tokenizer.eos_token
 
-    # Generate bot messages
-    bot_messages = generate_response(
-        model, 
-        tokenizer, 
-        history, 
-        config, 
-        mmi_model=mmi_model, 
-        mmi_tokenizer=mmi_tokenizer
-    )
-    if num_samples == 1:
+    try:
+        # Generate bot messages
+        bot_messages = generate_response(
+            model, 
+            tokenizer, 
+            history, 
+            config_parser, 
+            mmi_model=mmi_model, 
+            mmi_tokenizer=mmi_tokenizer
+        )
+    except:
+        logger.exception("ERROR occured:")
+        formatted_ex = traceback.format_exc() #Fetch error
+        if debug_mode:
+            response = "An error has occurred. Please try again:\n```" + formatted_ex + "```"
+        else:
+            response = "I'm a dumb bot and couldn't understand that. Sorry!"
+        history_dict = {} #Clear history
+        return response 
+
+    if debug_mode:
+        logger.warning("Found responses: " + str(bot_messages))
+        logger.warning("history: " + str(history_dict))
+        print(history_dict)
+        bot_message = str(bot_messages) if bot_messages != [''] else ''
+    elif num_samples == 1:
         bot_message = bot_messages[0]
+        turn['bot_messages'].append(bot_message)
     else:
         # TODO: Select a message that is the most appropriate given the context
         # This way you can avoid loops
         bot_message = random.choice(bot_messages)
-    turn['bot_messages'].append(bot_message)
-    #print(history_dict)
+        turn['bot_messages'].append(bot_message)
     return bot_message
 
 def main():
@@ -224,31 +271,42 @@ def main():
     global tokenizer
     global mmi_model
     global mmi_tokenizer
-    global config
+    global config_parser
     global history_dict
     global token
 
-    token = config('DISCORD_TOKEN') # Replace TOKEN_GOES_HERE with your discord API bot token!
     history_dict = {}
     # Script arguments can include path of the config
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--config', type=str, default="chatbot.cfg")
+    arg_parser.add_argument('--production_mode', nargs='?', const=True, default=False, type=bool)
     args = arg_parser.parse_args()
 
+    logger.info("starting with arguments: " + str(args))
+
+    if args.production_mode:
+        logger.info("Starting bot in PRODUCTION mode")
+        token = config('DISCORD_TOKEN') # Replace TOKEN_GOES_HERE with your discord API bot token!
+    else:
+        logger.info("Starting bot in DEVELOPMENT mode")
+        token = config('DEVELOPMENT_TOKEN')
+
+    logger.info("using token: " + token)
+
     # Read the config
-    config = configparser.ConfigParser(allow_no_value=True)
+    config_parser = configparser.ConfigParser(allow_no_value=True)
     with open(args.config) as f:
-        config.read_file(f)
+        config_parser.read_file(f)
 
     # Download and load main model
-    target_folder_name = download_model_folder(config)
-    model, tokenizer = load_model(target_folder_name, config)
+    target_folder_name = download_model_folder(config_parser)
+    model, tokenizer = load_model(target_folder_name, config_parser)
 
     # Download and load reverse model
-    use_mmi = config.getboolean('model', 'use_mmi')
+    use_mmi = config_parser.getboolean('model', 'use_mmi')
     if use_mmi:
-        mmi_target_folder_name = download_reverse_model_folder(config)
-        mmi_model, mmi_tokenizer = load_model(mmi_target_folder_name, config)
+        mmi_target_folder_name = download_reverse_model_folder(config_parser)
+        mmi_model, mmi_tokenizer = load_model(mmi_target_folder_name, config_parser)
     else:
         mmi_model = None
         mmi_tokenizer = None

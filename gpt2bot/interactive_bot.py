@@ -1,71 +1,154 @@
-#  Copyright (c) polakowo
-#  Licensed under the MIT license.
-
+import os
+import requests
+from tqdm import tqdm
+from glob import glob
+import torch
 import configparser
 import argparse
 import logging
-import random
 
-from model import download_model_folder, download_reverse_model_folder, load_model
-from decoder import generate_response
+# !pip install transformers==2.3.0
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+# If you get tensorflow deprecation warnings, run
+# pip uninstall numpy
+# pip install numpy==1.16.4
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def run_chat(model, tokenizer, config, mmi_model=None, mmi_tokenizer=None):
+# Model configuration files
+CONFIG_FILE = {
+    'small': 'https://convaisharables.blob.core.windows.net/lsp/117M/config.json',
+    'medium': 'https://convaisharables.blob.core.windows.net/lsp/345M/config.json'
+}
+VOCAB_FILE = {
+    'small': 'https://convaisharables.blob.core.windows.net/lsp/117M/vocab.json',
+    'medium': 'https://convaisharables.blob.core.windows.net/lsp/345M/vocab.json'
+}
+MERGE_FILE = {
+    'small': 'https://convaisharables.blob.core.windows.net/lsp/117M/merges.txt',
+    'medium': 'https://convaisharables.blob.core.windows.net/lsp/345M/merges.txt'
+}
+
+# Model files
+# Note that the model size is roughly half of the GPT model because our model is saved by fp16
+LSP_MODEL_URL = {
+    'multiref': {
+        'medium_fs': 'https://convaisharables.blob.core.windows.net/lsp/multiref/medium_fs.pkl',
+        'medium_ft': 'https://convaisharables.blob.core.windows.net/lsp/multiref/medium_ft.pkl',
+        'small_fs': 'https://convaisharables.blob.core.windows.net/lsp/multiref/small_fs.pkl',
+        'small_ft': 'https://convaisharables.blob.core.windows.net/lsp/multiref/small_ft.pkl'
+    },
+    'dstc': { # medium_ft.pkl is actually a small model
+        'small_ft': 'https://convaisharables.blob.core.windows.net/lsp/DSTC/medium_ft.pkl'
+    }
+}
+
+# The reverse model is predicting the source from the target. This model is used for MMI reranking.
+# small_reverse.pkl is actually a medium model
+REVERSE_MODEL_URL = 'https://convaisharables.blob.core.windows.net/lsp/multiref/small_reverse.pkl'
+
+def http_get(url, temp_file):
+    req = requests.get(url, stream=True)
+    content_length = req.headers.get('Content-Length')
+    total = int(content_length) if content_length is not None else None
+    progress = tqdm(unit="B", total=total)
+    for chunk in req.iter_content(chunk_size=1024):
+        if chunk: # filter out keep-alive new chunks
+            progress.update(len(chunk))
+            temp_file.write(chunk)
+    progress.close()
+
+
+def download_file(url, folder):
+    if not os.path.exists(folder):
+        os.makedirs(folder, exist_ok=True)
+
+    file_name = os.path.basename(url)
+    if 'pytorch_model.bin' in file_name:
+        file_name = 'pytorch_model.bin'
+
+    if os.path.isfile(os.path.join(folder, file_name)):
+        return
+
+    with open(os.path.join(folder, file_name), 'wb') as f:
+        http_get(url, f)
+
+
+def download_model_folder(config):
     # Parse parameters
-    num_samples = config.getint('decoder', 'num_samples')
-    max_turns_history = config.getint('decoder', 'max_turns_history')
+    data_folder = config.get('model', 'data_folder')
+    model_size = config.get('model', 'model_size')
+    dataset = config.get('model', 'dataset')
+    from_scratch = config.getboolean('model', 'from_scratch')
 
-    logger.info("Running the chatbot...")
-    turns = []
-    print("Bot >>>", "Just start texting me. If I'm getting annoying, type \"Bye\". To quit the chat type \"Quit\".")
-    while True:
-        prompt = input("User >>> ")
-        if max_turns_history == 0:
-            # If you still get different responses then set seed
-            turns = []
-        if prompt.lower() == 'bye':
-            print("Bot >>>", "Bye")
-            turns = []
-            continue
-        if prompt.lower() == 'quit':
-            break
-        # A single turn is a group of user messages and bot responses right after
-        turn = {
-            'user_messages': [],
-            'bot_messages': []
-        }
-        turns.append(turn)
-        turn['user_messages'].append(prompt)
-        # Merge turns into a single history (don't forget EOS token)
-        history = ""
-        from_index = max(len(turns)-max_turns_history-1, 0) if max_turns_history >= 0 else 0
-        for turn in turns[from_index:]:
-            # Each turn begings with user messages
-            for message in turn['user_messages']:
-                history += message + tokenizer.eos_token
-            for message in turn['bot_messages']:
-                history += message + tokenizer.eos_token
+    # Create data folder if needed
+    if not os.path.exists(data_folder):
+        os.makedirs(data_folder, exist_ok=True)
+    # Build target folder name (must be unique across all parameter combinations)
+    target_folder_name = model_size + "_" + dataset + ("_fs" if from_scratch else "_ft")
+    target_folder = os.path.join(data_folder, target_folder_name)
+    # Download files
+    logger.info(f"Downloading model files to {target_folder_name}...")
+    download_file(CONFIG_FILE[model_size], target_folder)
+    download_file(VOCAB_FILE[model_size], target_folder)
+    download_file(MERGE_FILE[model_size], target_folder)
+    model_train_type = model_size + ('_fs' if from_scratch else '_ft')
+    if model_train_type not in LSP_MODEL_URL[dataset]:
+        k = ','.join(list(LSP_MODEL_URL[dataset].keys()))
+        raise ValueError(f"'{model_train_type}' not exist for dataset '{dataset}', please choose from [{k}]")
+    download_file(LSP_MODEL_URL[dataset][model_train_type], target_folder)
+    return target_folder_name
 
-        # Generate bot messages
-        bot_messages = generate_response(
-            model, 
-            tokenizer, 
-            history, 
-            config, 
-            mmi_model=mmi_model, 
-            mmi_tokenizer=mmi_tokenizer
-        )
-        if num_samples == 1:
-            bot_message = bot_messages[0]
-        else:
-            # TODO: Select a message that is the most appropriate given the context
-            # This way you can avoid loops
-            bot_message = random.choice(bot_messages)
-        print("Bot >>>", bot_message)
-        turn['bot_messages'].append(bot_message)
+def download_reverse_model_folder(config):
+    # Parse parameters
+    data_folder = config.get('model', 'data_folder')
+    # Only one size is currently supported
+    model_size = 'medium'
+
+    # Create data folder if needed
+    if not os.path.exists(data_folder):
+        os.makedirs(data_folder, exist_ok=True)
+    # Build target folder name (must be unique across all parameter combinations)
+    target_folder_name = model_size + '_reverse'
+    target_folder = os.path.join(data_folder, target_folder_name)
+    # Download files
+    logger.info(f"Downloading model files to {target_folder_name}...")
+    download_file(CONFIG_FILE[model_size], target_folder)
+    download_file(VOCAB_FILE[model_size], target_folder)
+    download_file(MERGE_FILE[model_size], target_folder)
+    download_file(REVERSE_MODEL_URL, target_folder)
+    return target_folder_name
+
+def load_model(target_folder_name: str, config):
+    # Parse parameters
+    data_folder = config.get('model', 'data_folder')
+    model_size = config.get('model', 'model_size')
+    no_cuda = config.getboolean('model', 'no_cuda')
+
+    logger.info(f"Loading model from {target_folder_name}...")
+    device = torch.device("cuda" if torch.cuda.is_available() and not no_cuda else "cpu")
+    # Tokenizer
+    target_folder = os.path.join(data_folder, target_folder_name)
+    tokenizer = GPT2Tokenizer(os.path.join(target_folder, 'vocab.json'), os.path.join(target_folder, 'merges.txt'))
+    # tokenizer.add_special_tokens({"pad_token": "\u00a1"})
+    # Config
+    config = GPT2Config.from_json_file(os.path.join(target_folder, 'config.json'))
+    # Weights
+    state_dict_path = glob(os.path.join(target_folder, f'*.pkl'))[0]
+    state_dict = torch.load(state_dict_path, map_location=device)
+    if model_size == 'small':
+        for key in list(state_dict.keys()):
+            state_dict[key.replace('module.', '')] = state_dict.pop(key)
+    state_dict['lm_head.weight'] = state_dict['lm_head.decoder.weight']
+    state_dict.pop("lm_head.decoder.weight", None)
+    # Model
+    model = GPT2LMHeadModel(config)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+    return model, tokenizer
 
 def main():
     # Script arguments can include path of the config
@@ -78,21 +161,13 @@ def main():
     with open(args.config) as f:
         config.read_file(f)
 
-    # Download and load main model
-    target_folder_name = download_model_folder(config)
-    model, tokenizer = load_model(target_folder_name, config)
-
-    # Download and load reverse model
+    # Download main model
+    download_model_folder(config)
+    # Download reverse model
     use_mmi = config.getboolean('model', 'use_mmi')
     if use_mmi:
-        mmi_target_folder_name = download_reverse_model_folder(config)
-        mmi_model, mmi_tokenizer = load_model(mmi_target_folder_name, config)
-    else:
-        mmi_model = None
-        mmi_tokenizer = None
+        download_reverse_model_folder(config)
     
-    # Run chatbot with GPT-2
-    run_chat(model, tokenizer, config, mmi_model=mmi_model, mmi_tokenizer=mmi_tokenizer)
 
 if __name__ == '__main__':
     main()

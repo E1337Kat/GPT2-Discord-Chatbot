@@ -13,4 +13,9 @@ COPY .env .
 # Clean up APT when done.
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-CMD ["python", "discord_bot.py", "--production_mode"]
+COPY run.sh run.sh
+RUN chmod u+x run.sh
+
+ARG PYTHON_ENV=development
+ENV PYTHON_ENV=${PYTHON_ENV}
+CMD ["./run.sh"]

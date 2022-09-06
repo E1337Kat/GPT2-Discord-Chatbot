@@ -2,3 +2,5 @@
 models/
 .env
 __pycache__/
+
+gpt2bot/discord.log

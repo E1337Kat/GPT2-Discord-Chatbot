@@ -145,7 +145,7 @@ def load_model(target_folder_name: str, config):
     state_dict.pop("lm_head.decoder.weight", None)
     # Model
     model = GPT2LMHeadModel(config)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict,strict=False)
     model.to(device)
     model.eval()
     return model, tokenizer

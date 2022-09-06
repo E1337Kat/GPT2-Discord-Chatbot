@@ -18,16 +18,12 @@ import re
 #mpl.use('Agg')
 #import matplotlib.pyplot as plt
 import traceback
-
-
+from discord.message import Message
 from model import download_model_folder, download_reverse_model_folder, load_model
 from decoder import generate_response
-
-
 from textblob import TextBlob
 from googletrans import Translator
-
-
+import datetime
 
 
 # Enable logging
@@ -247,10 +243,9 @@ def get_response(prompt: str, channel_id: str, do_infinite: bool, debug_mode: bo
         history_dict = {} #Clear history
         return response 
 
+    logger.debug("Found responses: " + str(bot_messages))
+    logger.debug("history: " + str(history_dict))
     if debug_mode:
-        logger.warning("Found responses: " + str(bot_messages))
-        logger.warning("history: " + str(history_dict))
-        print(history_dict)
         bot_message = str(bot_messages) if bot_messages != [''] else ''
     elif num_samples == 1:
         bot_message = bot_messages[0]
@@ -276,6 +271,7 @@ def main():
     global token
 
     history_dict = {}
+    translator = Translator()
     # Script arguments can include path of the config
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--config', type=str, default="chatbot.cfg")
